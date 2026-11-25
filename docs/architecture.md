@@ -1,6 +1,6 @@
 # Compatibility investigation
 
-On 2026-11-24 a GitHub repository-name search for magickuma returned no results. AutoKuma v2.0.0 is the latest non-prerelease. Uptime Kuma 2.5.12 is the stable downstream test target. The default AutoKuma build targets Kuma 2.x, and a separate compile-time feature targets 1.x. MagicKuma targets the default v2 build. The version pair is a test target until the end-to-end suite passes. [AutoKuma release](https://github.com/BigBoot/AutoKuma/releases/tag/v2.0.0) · [Uptime Kuma release](https://github.com/louislam/uptime-kuma/releases/tag/2.5.12)
+On 2026-11-24 a GitHub repository-name search for magickuma returned no results. AutoKuma v2.0.0 is the latest non-prerelease. Uptime Kuma 2.5.12 is the stable downstream test target. The default AutoKuma build targets Kuma 2.x, and a separate compile-time feature targets 1.x. MagicKuma targets the default v2 build. The live integration fixture verified this pair on Linux. Both upstream projects use the MIT License. [AutoKuma release](https://github.com/BigBoot/AutoKuma/releases/tag/v2.0.0) · [Uptime Kuma release](https://github.com/louislam/uptime-kuma/releases/tag/2.5.12)
 
 | Question | Finding at the released tag | Consequence |
 | --- | --- | --- |

@@ -1,0 +1,16 @@
+{
+  "listen": "127.0.0.1:8085",
+  "stateDir": "/var/lib/magickuma",
+  "generatedFile": "/var/lib/magickuma-export/snapshot.json",
+  "staleAfter": "1h",
+  "clients": {
+    "web": {
+      "tokenHashFiles": ["/run/secrets/web.sha256"],
+      "allowedDomains": ["web.example.org"],
+      "allowedPorts": [443],
+      "allowedMonitorTypes": ["http", "keyword", "json-query"],
+      "maxMonitors": 20,
+      "minInterval": 60
+    }
+  }
+}

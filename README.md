@@ -6,6 +6,21 @@ A host can publish the checks for its own services, even when another team runs 
 
 MagicKuma accepts HTTPS snapshots. AutoKuma synchronizes the definitions into Uptime Kuma. Uptime Kuma runs the checks and holds their history. Only the reconciler needs Kuma credentials.
 
+## Try it
+
+```sh
+go build -o magickuma ./cmd/magickuma
+./magickuma validate -manifest examples/monitors.json
+./magickuma token generate -token-file web.token -hash-file web.sha256
+```
+
+Configure a loopback receiver behind HTTPS, then publish using the token file. AutoKuma 2.0.0 and Uptime Kuma 2.5.12 have been tested together with a disposable Linux instance. An empty publication withdraws the declaration and flags the running check for explicit retirement, preserving its history.
+
+- [Standalone setup, supported checks, rotation and retirement](docs/operations.md)
+- [Example server configuration](examples/server.json)
+- [Example JSON-query monitor](examples/monitors.json)
+- [Live integration test](docs/testing.md)
+
 ## Project documents
 
 - [Upstream compatibility and architecture](docs/architecture.md)
