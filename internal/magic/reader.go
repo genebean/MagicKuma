@@ -30,7 +30,14 @@ func (r *reader) stop() {
 		_ = r.cmd.Process.Kill()
 		<-r.done
 	}
-	os.RemoveAll(r.dir)
+	removeInput(r.dir)
+}
+
+// Only pass a directory returned by materialize, which uses MkdirTemp.
+func removeInput(dir string) {
+	if err := os.RemoveAll(dir); err != nil {
+		slog.Warn("could not remove retired reader input", "error", err)
+	}
 }
 
 func startReader(program, dir string) (*reader, error) {
@@ -73,11 +80,11 @@ func materialize(work string, b []byte) (string, error) {
 	for id, item := range monitors {
 		client, key, ok := strings.Cut(id, ".")
 		if !ok || !idPattern.MatchString(client) || !idPattern.MatchString(key) {
-			os.RemoveAll(dir)
+			removeInput(dir)
 			return "", errors.New("invalid aggregate ID")
 		}
 		if e = os.WriteFile(filepath.Join(dir, id+".json"), item, 0600); e != nil {
-			os.RemoveAll(dir)
+			removeInput(dir)
 			return "", e
 		}
 	}
@@ -87,13 +94,13 @@ func materialize(work string, b []byte) (string, error) {
 // RunAutoKuma pins one directory per child. A failed read or materialization
 // leaves a healthy reader on its previous complete input.
 func RunAutoKuma(ctx context.Context, file, program, work string) error {
-	if !filepath.IsAbs(work) || !filepath.IsAbs(file) {
-		return errors.New("snapshot and work-dir must be absolute")
+	if !filepath.IsAbs(work) || !filepath.IsAbs(file) || !filepath.IsAbs(program) {
+		return errors.New("program, snapshot and work-dir must be absolute")
 	}
 	if os.Getenv("AUTOKUMA__DATA_PATH") == "" {
 		return errors.New("set AUTOKUMA__DATA_PATH to a dedicated persistent directory")
 	}
-	if err := os.MkdirAll(work, 0700); err != nil {
+	if err := ensureOwnedDirectory(work); err != nil {
 		return err
 	}
 	lock, e := os.OpenFile(filepath.Join(work, "reader.lock"), os.O_CREATE|os.O_RDWR, 0600)
@@ -117,7 +124,7 @@ func RunAutoKuma(ctx context.Context, file, program, work string) error {
 		if active != nil {
 			select {
 			case e := <-active.done:
-				os.RemoveAll(active.dir)
+				removeInput(active.dir)
 				active = nil
 				return fmt.Errorf("AutoKuma exited: %v", e)
 			default:
@@ -134,7 +141,7 @@ func RunAutoKuma(ctx context.Context, file, program, work string) error {
 				}
 				active, e = startReader(program, dir)
 				if e != nil {
-					os.RemoveAll(dir)
+					removeInput(dir)
 					return e
 				}
 				previous = b

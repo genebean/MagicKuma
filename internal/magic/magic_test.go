@@ -297,3 +297,97 @@ func TestReceiverProbes(t *testing.T) {
 		t.Fatal("metrics identity or count")
 	}
 }
+
+func TestUnsafeStateDirectory(t *testing.T) {
+	path := t.TempDir()
+	if err := os.Chmod(path, 0770); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureOwnedDirectory(path); err == nil {
+		t.Fatal("accepted group-writable state")
+	}
+}
+
+func TestGeneratedPathCannotReplaceManifest(t *testing.T) {
+	c, _, file := fixture(t)
+	c.GeneratedFile = filepath.Join(c.StateDir, "manifests", "web.json")
+	data, err := json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(file, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = Load(file); err == nil {
+		t.Fatal("accepted overlapping state and export")
+	}
+}
+
+func TestBusyPublisherHasBoundedCost(t *testing.T) {
+	c, token, _ := fixture(t)
+	api := API{Config: c}
+	slots := make(chan struct{}, 1)
+	slots <- struct{}{}
+	req := httptest.NewRequest("PUT", "/api/v1/monitors", strings.NewReader("unread"))
+	req.Header.Set("Authorization", "Bearer "+token)
+	out := httptest.NewRecorder()
+	api.publish(out, req, slots)
+	if out.Code != 429 || out.Header().Get("Retry-After") == "" {
+		t.Fatal("missing retry response")
+	}
+}
+
+func TestOutOfRangeAssertionIsRejected(t *testing.T) {
+	c, _, _ := fixture(t)
+	m := manifest(t, `"health":{"type":"json-query","name":"health","url":"https://web.example.org","json_path":"status","expected_value":1e9999}`)
+	if err := c.Clients["web"].Validate(m); err == nil {
+		t.Fatal("accepted unrepresentable JSON value")
+	}
+}
+
+func FuzzPublicationRoundTrip(f *testing.F) {
+	f.Add([]byte(`{"schemaVersion":1,"monitors":{"web":` + httpMonitor + `}}`))
+	f.Add([]byte(`{"schemaVersion":1,"monitors":{}}`))
+	policy := Policy{Unrestricted: true, MinInterval: 1, MaxMonitors: 100}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		m, err := Parse(data)
+		if err != nil || policy.Validate(m) != nil {
+			return
+		}
+		normalized, err := json.Marshal(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(normalized) > MaxBody {
+			return
+		} // The wire limit applies before default expansion.
+		m, err = Parse(normalized)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = policy.Validate(m); err != nil {
+			t.Fatalf("normalized declaration rejected: %v", err)
+		}
+		again, err := json.Marshal(m)
+		if err != nil || !bytes.Equal(again, normalized) {
+			t.Fatal("normalization is not idempotent")
+		}
+	})
+}
+
+func TestSymlinkedExportCannotReplaceManifest(t *testing.T) {
+	c, _, _ := fixture(t)
+	source := filepath.Join(c.StateDir, "manifests")
+	if err := os.MkdirAll(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(c.StateDir, "export")
+	if err := os.Symlink(source, alias); err != nil {
+		t.Fatal(err)
+	}
+	c.GeneratedFile = filepath.Join(alias, "web.json")
+	if store, err := Open(c); err == nil {
+		store.Close()
+		t.Fatal("accepted an alias of authoritative storage")
+	}
+}

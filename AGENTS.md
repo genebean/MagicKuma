@@ -34,7 +34,7 @@ GitHub job summary. Avoid leaking target URLs or tokens through public
 metrics or test artifacts. Exercise operational probes through failures.
 Central receiver health monitors must work even if publication is down.
 
-Use the pinned flake or Go 1.24+ for development. Run:
+Use the pinned flake or a supported, patched Go toolchain. Run:
 
     gofmt -l cmd internal
     go mod tidy -diff

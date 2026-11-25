@@ -233,7 +233,7 @@ func newFile(path, value string) error {
 		e = ce
 	}
 	if e != nil {
-		os.Remove(path)
+		return errors.Join(e, os.Remove(path))
 	}
 	return e
 }
@@ -247,7 +247,7 @@ func generate(token, hash string) error {
 		return e
 	}
 	if e = newFile(hash, h); e != nil {
-		os.Remove(token)
+		return errors.Join(e, os.Remove(token))
 	}
 	return e
 }

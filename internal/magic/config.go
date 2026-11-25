@@ -55,6 +55,9 @@ func Load(path string) (Config, error) {
 	if !filepath.IsAbs(c.GeneratedFile) {
 		return c, errors.New("generatedFile must be absolute")
 	}
+	if err := validateExport(c.StateDir, c.GeneratedFile); err != nil {
+		return c, err
+	}
 	if c.StaleAfter == "" {
 		c.StaleAfter = "1h"
 	}
@@ -126,4 +129,19 @@ func ValidateOffline(data []byte) error {
 	}
 	p := Policy{Unrestricted: true, MaxMonitors: 10000, MinInterval: 1}
 	return p.Validate(m)
+}
+
+// validateExport keeps generated writes away from manifests, metadata and the
+// writer lock. Open repeats this check after resolving directory symlinks.
+func validateExport(stateDir, file string) error {
+	rel, err := filepath.Rel(stateDir, file)
+	if err != nil {
+		return err
+	}
+	first, _, _ := strings.Cut(rel, string(os.PathSeparator))
+	switch first {
+	case ".", "manifests", "metadata", "writer.lock":
+		return errors.New("generatedFile overlaps authoritative state")
+	}
+	return nil
 }

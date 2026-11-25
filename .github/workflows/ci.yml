@@ -15,6 +15,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false, fetch-depth: 0 }
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with: { go-version: stable, cache: false }
       - name: Formatting, module consistency and vet
@@ -22,6 +23,17 @@ jobs:
           test -z "$(gofmt -l cmd internal)"
           go mod tidy -diff
           go vet ./...
+      - name: Scan repository history for secrets
+        run: python3 ci/report.py secrets.xml --name repository-secrets -- bash ci/secrets.sh
+      - if: always() && hashFiles('secrets.xml') != ''
+        run: python3 ci/report.py secrets.xml --summary
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && hashFiles('secrets.xml') != ''
+        with: { name: secret-scan-result, path: secrets.xml }
+      - name: Check Go vulnerability reachability
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
+          govulncheck ./...
       - name: Compile the supported binaries
         run: |
           for platform in linux/amd64 linux/arm64 darwin/arm64; do
@@ -34,6 +46,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with: { go-version: stable, cache: false }
       - run: go install gotest.tools/gotestsum@v1.13.0
@@ -55,6 +68,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with: { go-version: stable, cache: false }
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -73,6 +87,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
       - uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
         with:
           extra_nix_config: system-features = nixos-test benchmark big-parallel kvm
@@ -92,8 +107,18 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with: { go-version: stable, cache: false }
       - name: Build and smoke-test non-root OCI image
         run: |
           docker build -t magickuma:test .
           docker run --rm magickuma:test version
           docker run --rm -v "$PWD/examples:/examples:ro" magickuma:test validate -manifest /examples/monitors.json
+      - name: Scan the shipped Go executable
+        run: |
+          container=$(docker create magickuma:test)
+          trap 'docker rm "$container" >/dev/null' EXIT
+          docker cp "$container:/magickuma" "$RUNNER_TEMP/magickuma-image"
+          go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
+          govulncheck -mode=binary "$RUNNER_TEMP/magickuma-image"

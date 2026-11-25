@@ -2,6 +2,9 @@ name: Release
 on:
   push:
     tags: ['v*']
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 permissions:
   contents: read
 
@@ -18,10 +21,17 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
-        with: { go-version: stable, cache: false }
+        with: { go-version: '1.27.4', cache: false }
       - name: Build release archives and checksums
         run: bash ci/binaries.sh "$GITHUB_REF_NAME" dist
+      - name: Reserve a draft before publishing artifacts
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          if ! gh release create "$GITHUB_REF_NAME" --verify-tag --draft --generate-notes; then
+            test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true
+          fi
       - name: Push multi-platform image
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
@@ -35,8 +45,5 @@ jobs:
       - name: Publish GitHub release assets
         env: { GH_TOKEN: "${{ github.token }}" }
         run: |
-          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" --verify-tag --draft --generate-notes
-          fi
           gh release upload "$GITHUB_REF_NAME" dist/* --clobber
           gh release edit "$GITHUB_REF_NAME" --draft=false

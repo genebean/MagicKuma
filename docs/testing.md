@@ -7,3 +7,5 @@ Set KUMA_SOURCE to a checkout of louislam/uptime-kuma at 2.5.12 with production 
 The flake pins the nixpkgs revision for packaging and VM evaluation. The live fixture pins the upstream pair independently so consumer nixpkgs overrides cannot silently redefine the compatibility claim.
 
 GitHub Actions runs formatting, module consistency, go vet and cross-compilation first. Race tests run next. The live upstream and two-node NixOS jobs depend on the unit job. Each test job publishes JUnit XML and a job summary including failing case names. Go coverage is available beside the unit report. Fork PRs need only read permission. The flake VM requires a Linux runner with KVM.
+
+The static job also scans the complete checkout with Betterleaks v1.10.1 and runs govulncheck against the Go source. Betterleaks uses redacted output with live credential validation disabled. The secret-scan JUnit artifact contains only the result and duration. The image job extracts the shipped executable and runs binary-mode govulncheck against it.
