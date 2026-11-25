@@ -27,6 +27,8 @@ type API struct {
 
 func (a *API) Handler() http.Handler {
 	mux := http.NewServeMux()
+	// Bound memory and queued disk work even for valid client credentials.
+	publicationSlots := make(chan struct{}, 16)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		reply(w, http.StatusOK, map[string]bool{"healthy": true})
 	})
@@ -38,7 +40,9 @@ func (a *API) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /metrics", a.metrics)
 	mux.HandleFunc("GET /api/v1/status", a.status)
-	mux.HandleFunc("PUT /api/v1/monitors", a.publish)
+	mux.HandleFunc("PUT /api/v1/monitors", func(w http.ResponseWriter, r *http.Request) {
+		a.publish(w, r, publicationSlots)
+	})
 	return mux
 }
 
@@ -85,9 +89,17 @@ func (a *API) status(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *API) publish(w http.ResponseWriter, r *http.Request) {
+func (a *API) publish(w http.ResponseWriter, r *http.Request, slots chan struct{}) {
 	id := a.authenticate(w, r)
 	if id == "" {
+		return
+	}
+	select {
+	case slots <- struct{}{}:
+		defer func() { <-slots }()
+	default:
+		w.Header().Set("Retry-After", "5")
+		a.reject(w, http.StatusTooManyRequests, "busy", "receiver at capacity; retry later", "")
 		return
 	}
 	typ, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))

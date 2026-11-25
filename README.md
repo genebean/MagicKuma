@@ -24,7 +24,7 @@ Configure a loopback receiver behind HTTPS, then publish using the token file. A
 ## Project documents
 
 - [Upstream compatibility and architecture](docs/architecture.md)
-- [Security and operating assumptions](docs/security.md)
+- [Security and operating assumptions](docs/security.md) and [pre-release security audit](docs/security-audit.md)
 - [Publication protocol](docs/api.md)
 - [Native and NixOS configuration](docs/configuration.md) and [client/server flake example](examples/nixos.nix)
 - [Implementation dependencies and acceptance tests](docs/plan.md)

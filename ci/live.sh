@@ -9,8 +9,9 @@ curl --fail --silent --show-error --location --retry 3 \
   "https://codeload.github.com/louislam/uptime-kuma/tar.gz/5aa5dec425f8a955b54e150636979a6927745ec5" |
   tar -xz --strip-components=1 -C "$source_dir"
 curl --fail --silent --show-error --location --retry 3 \
-  "https://github.com/louislam/uptime-kuma/releases/download/2.5.12/dist.tar.gz" |
-  tar -xz -C "$source_dir"
+  "https://github.com/louislam/uptime-kuma/releases/download/2.5.12/dist.tar.gz" -o "$work/dist.tar.gz"
+(cd "$work" && echo '8524bfbf0140de84fe14a5f3946bb322beaf7070aa51f36ebd568db1b9758472  dist.tar.gz' | sha256sum -c -)
+tar -xzf "$work/dist.tar.gz" -C "$source_dir"
 (cd "$source_dir" && npm ci --omit=dev --no-audit --no-fund)
 curl --fail --silent --show-error --location --retry 3 \
   "https://github.com/BigBoot/AutoKuma/releases/download/v2.0.0/autokuma-linux" -o "$work/autokuma"

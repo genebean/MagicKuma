@@ -1,6 +1,6 @@
 # Standalone operation
 
-Build with Go 1.24 or later using `go build -o magickuma ./cmd/magickuma`. Install the binary in the service PATH. Copy examples/server.json and adapt the namespace and destination grants to your deployment. One MagicKuma receiver owns one local POSIX filesystem state directory. Use a separate service account for AutoKuma.
+Build with a supported, patched Go toolchain (the reviewed release build uses Go 1.27.4) using `go build -o magickuma ./cmd/magickuma`. Install the binary in the service PATH. Copy examples/server.json and adapt the namespace and destination grants to your deployment. One MagicKuma receiver owns one local POSIX filesystem state directory. Use a separate service account for AutoKuma.
 
 1. Run `magickuma token generate -token-file web.token -hash-file web.sha256` in a private directory. The command creates new mode-0600 files and refuses to overwrite existing files. Deliver web.token to the publisher and web.sha256 to the receiver. Rotation accepts both hashes during rollout. Restart the receiver after changing policy or hash files.
 2. Give the receiver ownership of /var/lib/magickuma (0700). Create /var/lib/magickuma-export owned by the receiver and its reader group (0750). Grant the reconciler group membership for that export only. Each exported snapshot is 0640. Where the receiver's primary group differs, set the directory's setgid bit. Never share the writable state directory between processes or hosts.

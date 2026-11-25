@@ -60,8 +60,8 @@ async function main() {
   const kp = await port(), mp = await port();
   const origin = "http://127.0.0.1:" + kp;
   const upstream = "http://127.0.0.1:" + mp;
-  let heartbeats = 0;
-  const target = await listen(http.createServer((req,res)=>{heartbeats++;res.end('{"status":"healthy"}')}));
+  let delegatedRequests = 0;
+  const target = await listen(http.createServer((req,res)=>{if(req.url==="/health") delegatedRequests++;res.end('{"status":"healthy"}')}));
   start(process.execPath, ["server/server.js"], { DATA_DIR: dir + "/kuma-data/", UPTIME_KUMA_DB_TYPE:"sqlite", UPTIME_KUMA_HOST:"127.0.0.1", UPTIME_KUMA_PORT:String(kp) }, source);
   await until(async () => (await fetch(origin)).ok, "Kuma HTTP");
   socket = io(origin,{transports:["websocket"]});
@@ -91,12 +91,13 @@ async function main() {
     const child=start(mk,["publish","-url",endpoint,"-manifest",manifest,"-token-file",token],{SSL_CERT_FILE:cert});
     const [code]=await once(child,"exit");assert.equal(code,0);
   }
-  const monitor={type:"json-query",name:"Delegated",url:"http://127.0.0.1:"+target+"/health",json_path:"$.status",json_path_operator:"==",expected_value:"healthy"};
+  const monitor={type:"json-query",name:"Delegated",url:"http://127.0.0.1:"+target+"/health",json_path:"$.status",json_path_operator:"==",expected_value:"healthy",interval:120};
   await publish({health:monitor});
   start(mk,["run-autokuma","-program",ak,"-snapshot",snapshot,"-work-dir",dir+"/inputs"],{AUTOKUMA__KUMA__URL:origin,AUTOKUMA__KUMA__USERNAME:"tester",AUTOKUMA__KUMA__PASSWORD:password,AUTOKUMA__DATA_PATH:dir+"/autokuma-data",AUTOKUMA__SYNC_INTERVAL:"1"});
   const first=await until(()=>monitors.get("Delegated"),"AutoKuma create");
   const get=async id=>(await emit("getMonitor",id)).monitor;
-  const actual=await get(first.id);assert.equal(actual.maxredirects,0);assert.equal(actual.jsonPathOperator,"==");assert.equal(actual.description,"Managed by MagicKuma: site/health");
+  const actual=await get(first.id);assert.equal(actual.maxredirects,0);assert.equal(actual.retryInterval,120);assert.equal(actual.jsonPathOperator,"==");assert.equal(actual.description,"Managed by MagicKuma: site/health");
+  await until(()=>delegatedRequests>0,"delegated HTTP check");
   await publish({health:{...monitor,name:"Renamed"}});
   const updated=await until(()=>monitors.get("Renamed"),"AutoKuma update");assert.equal(updated.id,first.id);
   await stop(receiver);fs.unlinkSync(snapshot);receiver=start(mk,["serve","-config",config]);
@@ -111,7 +112,6 @@ async function main() {
   execFileSync(mk,["ack-retired","-config",config,"-client","site","-monitor","health"]);
   receiver=start(mk,["serve","-config",config]);await until(async ()=>(await fetch(upstream+"/readyz")).ok,"retirement acknowledged");
   assert.equal((await get(first.id)).active,false);
-  assert.ok(heartbeats>0);
   console.log("PASS: HTTPS CLI, live add/edit with stable Kuma ID, recovery, keep, manual coexistence and acknowledged retirement");
 }
 main().catch(e=>{console.error(e.message);console.error("Disposable fixture:",dir);process.exitCode=1}).finally(async()=>{

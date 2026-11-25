@@ -150,7 +150,11 @@ func (p Policy) normalizeURL(s string) (string, error) {
 	} else {
 		u.Host = net.JoinHostPort(h, strconv.Itoa(port))
 	}
-	return u.String(), nil
+	normalized := u.String()
+	if !safeString(normalized) {
+		return "", errors.New("normalized URL exceeds the allowed representation")
+	}
+	return normalized, nil
 }
 
 func number(v any) (int, bool) {
@@ -273,8 +277,17 @@ func (p Policy) monitor(id string, m Monitor) error {
 				return problem("json_path_operator", "unsupported comparison")
 			}
 		}
-		switch m["expected_value"].(type) {
-		case string, json.Number:
+		switch value := m["expected_value"].(type) {
+		case json.Number:
+			if !strings.ContainsAny(value.String(), ".eE") {
+				if _, err := value.Int64(); err != nil {
+					return problem("expected_value", "integer outside the static TOML range")
+				}
+			}
+			if _, err := value.Float64(); err != nil {
+				return problem("expected_value", "number outside the upstream numeric range")
+			}
+		case string:
 		default:
 			return problem("expected_value", "expected a string or number")
 		}

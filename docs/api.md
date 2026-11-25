@@ -16,3 +16,5 @@ Use HTTPS with ordinary certificate verification. A curl client can construct a 
 ```
 
 Successful acceptance returns 200 with changed and acceptedAt. Repeated equivalent snapshots update freshness. Acceptance certifies durable publication only. Clients must never infer that a check has run. Errors use an error code and message, with a monitor/property path for validation failures. Use 400 for malformed JSON, 401 for invalid credentials, 413 for oversized bodies, 415 for media type, 422 for schema/policy errors and 503 for storage problems. Retry transport and server failures with backoff. Diagnose policy errors before retrying.
+
+The receiver admits up to 16 simultaneous authenticated publication bodies per HTTP handler. At capacity it returns 429 with Retry-After. Retry with jitter. The per-request 1 MiB limit still applies. For a large or exposed installation, rate-limit the publication route at the TLS proxy to bound repeated writes per source. A monitor's interval governs normal scheduled checks; Kuma can execute an initial check after a configuration edit.

@@ -85,9 +85,20 @@ func syncDir(dir string) error {
 
 func Open(c Config) (*Store, error) {
 	for _, d := range []string{c.StateDir, filepath.Join(c.StateDir, "manifests"), filepath.Join(c.StateDir, "metadata"), filepath.Dir(c.GeneratedFile)} {
-		if e := os.MkdirAll(d, 0700); e != nil {
+		if e := ensureOwnedDirectory(d); e != nil {
 			return nil, e
 		}
+	}
+	stateDir, err := filepath.EvalSymlinks(c.StateDir)
+	if err != nil {
+		return nil, err
+	}
+	exportDir, err := filepath.EvalSymlinks(filepath.Dir(c.GeneratedFile))
+	if err != nil {
+		return nil, err
+	}
+	if err := validateExport(stateDir, filepath.Join(exportDir, filepath.Base(c.GeneratedFile))); err != nil {
+		return nil, err
 	}
 	if e := syncDir(c.StateDir); e != nil {
 		return nil, e
@@ -97,13 +108,11 @@ func Open(c Config) (*Store, error) {
 		return nil, e
 	}
 	if e = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); e != nil {
-		lock.Close()
-		return nil, errors.New("state directory already has a writer")
+		return nil, errors.Join(errors.New("state directory already has a writer"), lock.Close())
 	}
 	s := &Store{c: c, lock: lock, records: map[string]record{}, last: map[string]time.Time{}, dirty: true}
 	if e = s.restore(); e != nil {
-		s.Close()
-		return nil, e
+		return nil, errors.Join(e, s.Close())
 	}
 	return s, nil
 }
@@ -275,6 +284,7 @@ func (s *Store) render() (err error) {
 		for id, m := range r.Manifest.Monitors {
 			if r.Pending[id] == "" {
 				item := maps.Clone(m)
+				item["retry_interval"] = m["interval"]
 				item["description"] = "Managed by MagicKuma: " + client + "/" + id
 				out[client+"."+id] = item
 			}
