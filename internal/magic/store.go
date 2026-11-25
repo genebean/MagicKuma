@@ -23,6 +23,7 @@ type record struct {
 	Pending   map[string]string `json:"pending"`
 	ChangedAt time.Time         `json:"changedAt"`
 }
+
 type Status struct {
 	LastPublication time.Time         `json:"lastPublication"`
 	Stale           bool              `json:"stale"`
@@ -33,13 +34,15 @@ type Status struct {
 var errUncertain = errors.New("rename committed but directory sync failed; restart receiver")
 
 type Store struct {
-	fenced  bool
-	mu      sync.Mutex
-	c       Config
-	lock    *os.File
-	records map[string]record
-	last    map[string]time.Time
-	dirty   bool
+	fenced             bool
+	generationFailures uint64
+	storageFailed      bool
+	mu                 sync.Mutex
+	c                  Config
+	lock               *os.File
+	records            map[string]record
+	last               map[string]time.Time
+	dirty              bool
 }
 
 func atomicFile(path string, data []byte, mode os.FileMode) error {
@@ -70,6 +73,7 @@ func atomicFile(path string, data []byte, mode os.FileMode) error {
 	}
 	return nil
 }
+
 func syncDir(dir string) error {
 	d, e := os.Open(dir)
 	if e != nil {
@@ -78,6 +82,7 @@ func syncDir(dir string) error {
 	defer d.Close()
 	return d.Sync()
 }
+
 func Open(c Config) (*Store, error) {
 	for _, d := range []string{c.StateDir, filepath.Join(c.StateDir, "manifests"), filepath.Join(c.StateDir, "metadata"), filepath.Dir(c.GeneratedFile)} {
 		if e := os.MkdirAll(d, 0700); e != nil {
@@ -102,6 +107,7 @@ func Open(c Config) (*Store, error) {
 	}
 	return s, nil
 }
+
 func (s *Store) Close() error               { return s.lock.Close() }
 func (s *Store) path(dir, id string) string { return filepath.Join(s.c.StateDir, dir, id+".json") }
 func (s *Store) restore() error {
@@ -172,6 +178,7 @@ func (s *Store) restore() error {
 	}
 	return s.render()
 }
+
 func (s *Store) save(id string, r record) error {
 	b, e := json.Marshal(r)
 	if e != nil {
@@ -179,6 +186,7 @@ func (s *Store) save(id string, r record) error {
 	}
 	return atomicFile(s.path("manifests", id), b, 0600)
 }
+
 func (s *Store) Publish(id string, m Manifest, now time.Time) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -209,9 +217,11 @@ func (s *Store) Publish(id string, m Manifest, now time.Time) (bool, error) {
 	if bytes.Equal(next, prev) {
 		stamp, _ := json.Marshal(now)
 		if e := atomicFile(s.path("metadata", id), stamp, 0600); e != nil {
+			s.storageFailed = true
 			return false, e
 		}
 		s.last[id] = now
+		s.storageFailed = false
 		return false, nil
 	}
 	r := record{m, maps.Clone(old.Types), maps.Clone(old.Pending), now}
@@ -238,6 +248,7 @@ func (s *Store) Publish(id string, m Manifest, now time.Time) (bool, error) {
 		return false, invalid("monitors", "namespace lifetime identity limit exceeded")
 	}
 	if e := s.save(id, r); e != nil {
+		s.storageFailed = true
 		if errors.Is(e, errUncertain) {
 			s.fenced = true
 		}
@@ -245,13 +256,20 @@ func (s *Store) Publish(id string, m Manifest, now time.Time) (bool, error) {
 	}
 	s.records[id] = r
 	s.last[id] = now
+	s.storageFailed = false
 	s.dirty = true
 	if e := s.render(); e != nil {
 		slog.Error("generation pending", "error", e)
 	}
 	return true, nil
 }
-func (s *Store) render() error {
+
+func (s *Store) render() (err error) {
+	defer func() {
+		if err != nil {
+			s.generationFailures++
+		}
+	}()
 	out := map[string]Monitor{}
 	for client, r := range s.records {
 		for id, m := range r.Manifest.Monitors {
@@ -280,6 +298,7 @@ func (s *Store) render() error {
 	s.dirty = false
 	return nil
 }
+
 func (s *Store) Retry() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -288,20 +307,23 @@ func (s *Store) Retry() error {
 	}
 	return nil
 }
+
 func (s *Store) status(id string, now time.Time) Status {
 	r := s.records[id]
 	t := s.last[id]
 	return Status{t, t.IsZero() || now.Sub(t) > s.c.stale, len(r.Manifest.Monitors), maps.Clone(r.Pending)}
 }
+
 func (s *Store) Status(id string, now time.Time) Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.status(id, now)
 }
+
 func (s *Store) Ready() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.dirty || s.fenced {
+	if s.dirty || s.fenced || s.storageFailed {
 		return false
 	}
 	for _, r := range s.records {
@@ -310,20 +332,6 @@ func (s *Store) Ready() bool {
 		}
 	}
 	return true
-}
-func (s *Store) Counts() (declared, stale, pending int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for id := range s.c.Clients {
-		if s.status(id, time.Now()).Stale {
-			stale++
-		}
-	}
-	for _, r := range s.records {
-		declared += len(r.Manifest.Monitors)
-		pending += len(r.Pending)
-	}
-	return
 }
 
 // Admin runs with the receiver stopped and the same exclusive writer lock.

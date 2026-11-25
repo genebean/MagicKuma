@@ -161,6 +161,7 @@ func number(v any) (int, bool) {
 	i, e := strconv.Atoi(string(n))
 	return i, e == nil
 }
+
 func safeString(s string) bool {
 	if s == "" || len(s) > 2048 || strings.HasPrefix(s, "\"") || strings.Contains(s, "{{") || strings.Contains(s, "{%") || strings.Contains(s, "{#") {
 		return false

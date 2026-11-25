@@ -33,3 +33,26 @@ To revoke only the publishing credential, remove its hash and keep the client po
 Monitor GET /healthz for process liveness and GET /readyz for generated input and outstanding retirements. Scrape /metrics locally. Keep all three endpoints behind private access controls. Staleness only affects status and metrics. It never changes monitor configuration. Publication timestamps persist for changed and identical requests. Reconciliation success remains observable in AutoKuma logs and Kuma's UI.
 
 Back up manifests, metadata, AutoKuma's data directory and Kuma using their supported backup procedures. Restore them consistently to preserve identity. On startup a corrupt source record aborts regeneration and preserves the previous aggregate. With the receiver stopped a missing generated snapshot can be regenerated from state. Materialization failures leave the old reader on its complete input. If restarting the reader fails after stopping the previous process, its service manager retries. Uptime Kuma continues executing previously configured checks independently.
+
+## Monitor the receiver from Uptime Kuma
+
+Create independent HTTP monitors in Kuma, or copy the two files in examples/central-monitors into the static directory of the **central** AutoKuma instance. Set their URLs to the receiver's actual HTTPS hostname. Keep them outside the MagicKuma-generated directory so they exist before the first publisher and survive a receiver outage. Set normal Kuma notifications on these central monitors.
+
+| Probe from Kuma | A failure tells the operator |
+| --- | --- |
+| GET /healthz | The HTTPS route, TLS terminator or MagicKuma process is unreachable. |
+| GET /readyz | Local generation or the last state write failed, or a formerly authorized check needs retirement. Inspect logs and per-client status. |
+| GET /freshz (optional) | At least one credentialed publisher has never published or is past staleAfter. Existing checks continue. |
+
+Forward these exact GET paths through the same HTTPS frontend that accepts publication. Restrict them to Kuma's source network when possible. Each returns one boolean and a 200 or 503 response. No publishing token is needed. Keep /metrics private for Prometheus. These HTTP monitors do not prove a PUT succeeds or that AutoKuma applied a change. The reader logs the generated snapshot digest and child PID when starting AutoKuma. Inspect AutoKuma logs and Kuma's own check results for downstream failures.
+
+An nginx example for the private probes (replace the example monitoring address):
+
+```nginx
+location ~ ^/(healthz|readyz|freshz)$ {
+    allow 192.0.2.10;
+    deny all;
+    limit_except GET { deny all; }
+    proxy_pass http://127.0.0.1:8085;
+}
+```

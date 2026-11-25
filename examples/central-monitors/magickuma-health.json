@@ -1,0 +1,7 @@
+{
+  "type": "http",
+  "name": "MagicKuma receiver reachable",
+  "url": "https://monitoring.example.org/healthz",
+  "interval": 60,
+  "max_redirects": 0
+}

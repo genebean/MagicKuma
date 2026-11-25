@@ -7,7 +7,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/genebean/magickuma/internal/magic"
 	"io"
 	"log/slog"
 	"net/http"
@@ -17,6 +16,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/genebean/magickuma/internal/magic"
 )
 
 const usage = `magickuma - Distributed, declarative monitoring for Uptime Kuma
@@ -54,6 +55,7 @@ func main() {
 		os.Exit(1)
 	}
 }
+
 func run(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return usageError(usage)
@@ -180,6 +182,7 @@ func run(ctx context.Context, args []string) error {
 		}
 	}
 }
+
 func request(ctx context.Context, cmd, origin, tokenFile string, data []byte) error {
 	u, e := url.Parse(origin)
 	if e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
@@ -215,6 +218,7 @@ func request(ctx context.Context, cmd, origin, tokenFile string, data []byte) er
 	_, e = io.Copy(os.Stdout, io.LimitReader(resp.Body, 1<<20))
 	return e
 }
+
 func newFile(path, value string) error {
 	f, e := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if e != nil {
@@ -233,6 +237,7 @@ func newFile(path, value string) error {
 	}
 	return e
 }
+
 func generate(token, hash string) error {
 	t, h, e := magic.NewToken()
 	if e != nil {

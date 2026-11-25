@@ -30,3 +30,7 @@ Configure a loopback receiver behind HTTPS, then publish using the token file. A
 - [Implementation dependencies and acceptance tests](docs/plan.md)
 
 Apache-2.0. This repository is under development.
+
+## Monitor MagicKuma itself
+
+Keep the receiver's health and readiness checks in central AutoKuma configuration or create them directly in Uptime Kuma. They use the real HTTPS endpoint without a publishing credential. An optional freshness probe detects missed publications. [Central monitor examples](examples/central-monitors) · [Probe meanings and proxy configuration](docs/operations.md#monitor-the-receiver-from-uptime-kuma)
