@@ -26,7 +26,7 @@ Configure a loopback receiver behind HTTPS, then publish using the token file. A
 - [Upstream compatibility and architecture](docs/architecture.md)
 - [Security and operating assumptions](docs/security.md)
 - [Publication protocol](docs/api.md)
-- [Native and NixOS configuration](docs/configuration.md)
+- [Native and NixOS configuration](docs/configuration.md) and [client/server flake example](examples/nixos.nix)
 - [Implementation dependencies and acceptance tests](docs/plan.md)
 
 Apache-2.0. This repository is under development.
