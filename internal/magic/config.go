@@ -24,6 +24,7 @@ type Config struct {
 	credentials   []credential
 	stale         time.Duration
 }
+
 type credential struct {
 	client string
 	hash   [32]byte
@@ -96,6 +97,7 @@ func Load(path string) (Config, error) {
 	}
 	return c, nil
 }
+
 func (c Config) Authenticate(token string) string {
 	h := sha256.Sum256([]byte(token))
 	id := ""
@@ -106,6 +108,7 @@ func (c Config) Authenticate(token string) string {
 	}
 	return id
 }
+
 func NewToken() (string, string, error) {
 	var b [32]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -115,6 +118,7 @@ func NewToken() (string, string, error) {
 	h := sha256.Sum256([]byte(token))
 	return token, hex.EncodeToString(h[:]), nil
 }
+
 func ValidateOffline(data []byte) error {
 	m, err := Parse(data)
 	if err != nil {

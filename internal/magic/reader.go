@@ -3,6 +3,7 @@ package magic
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,12 +32,22 @@ func (r *reader) stop() {
 	}
 	os.RemoveAll(r.dir)
 }
+
 func startReader(program, dir string) (*reader, error) {
 	cmd := exec.Command(program)
 	cmd.Env = os.Environ()
-	for k, v := range map[string]string{"STATIC_MONITORS": dir, "ON_DELETE": "keep", "DOCKER__ENABLED": "false", "FILES__ENABLED": "true", "FILES__FOLLOW_SYMLINKS": "false", "KUBERNETES__ENABLED": "false", "DEFAULT_SETTINGS": "", "INSECURE_ENV_ACCESS": "false", "MIGRATE": "false", "TAG_NAME": "MagicKuma-managed"} {
-		cmd.Env = append(cmd.Env, "AUTOKUMA__"+k+"="+v)
-	}
+	cmd.Env = append(cmd.Env,
+		"AUTOKUMA__STATIC_MONITORS="+dir,
+		"AUTOKUMA__ON_DELETE=keep",
+		"AUTOKUMA__FILES__ENABLED=true",
+		"AUTOKUMA__FILES__FOLLOW_SYMLINKS=false",
+		"AUTOKUMA__DOCKER__ENABLED=false",
+		"AUTOKUMA__KUBERNETES__ENABLED=false",
+		"AUTOKUMA__DEFAULT_SETTINGS=",
+		"AUTOKUMA__INSECURE_ENV_ACCESS=false",
+		"AUTOKUMA__MIGRATE=false",
+		"AUTOKUMA__TAG_NAME=MagicKuma-managed",
+	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
@@ -46,6 +57,7 @@ func startReader(program, dir string) (*reader, error) {
 	go func() { r.done <- cmd.Wait() }()
 	return r, nil
 }
+
 func materialize(work string, b []byte) (string, error) {
 	var monitors map[string]json.RawMessage
 	if e := Decode(b, &monitors); e != nil {
@@ -126,7 +138,7 @@ func RunAutoKuma(ctx context.Context, file, program, work string) error {
 					return e
 				}
 				previous = b
-				slog.Info("started reconciler with complete snapshot")
+				slog.Info("started reconciler with complete snapshot", "generation", fmt.Sprintf("%x", sha256.Sum256(b)), "pid", active.cmd.Process.Pid)
 			}
 		}
 		if e != nil {

@@ -1,0 +1,7 @@
+{
+  "type": "http",
+  "name": "MagicKuma receiver ready",
+  "url": "https://monitoring.example.org/readyz",
+  "interval": 60,
+  "max_redirects": 0
+}

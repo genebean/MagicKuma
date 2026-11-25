@@ -67,6 +67,7 @@ func manifest(t *testing.T, items string) Manifest {
 	}
 	return m
 }
+
 func TestDestinationPolicy(t *testing.T) {
 	c, _, _ := fixture(t)
 	p := c.Clients["web"]
@@ -89,6 +90,7 @@ func TestDestinationPolicy(t *testing.T) {
 		t.Fatal(s, e)
 	}
 }
+
 func TestFailClosedFields(t *testing.T) {
 	c, _, _ := fixture(t)
 	for _, fields := range []string{`"type":"database"`, `"headers":{}`, `"proxy_id":1`, `"method":"POST"`, `"body":"a"`, `"notificationIDList":{}`, `"max_redirects":2`, `"interval":1`, `"retry_interval":1`, `"proxyId":null`, `"description":"x"`, `"name":"{{ value }}"`, `"name":"\"raw\""`, `"name":"{% block %}"`, `"name":"a\nb"`, `"url":"https://other.example"`} {
@@ -111,6 +113,7 @@ func TestFailClosedFields(t *testing.T) {
 		t.Fatal("accepted traversal")
 	}
 }
+
 func TestLifecycle(t *testing.T) {
 	c, _, f := fixture(t)
 	s, e := Open(c)
@@ -189,6 +192,7 @@ func TestLifecycle(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
 func TestConcurrentHTTPS(t *testing.T) {
 	c, token, _ := fixture(t)
 	s, e := Open(c)
@@ -227,6 +231,7 @@ func TestConcurrentHTTPS(t *testing.T) {
 		t.Fatal("invalid response status")
 	}
 }
+
 func TestRecovery(t *testing.T) {
 	c, _, _ := fixture(t)
 	s, e := Open(c)
@@ -253,5 +258,42 @@ func TestRecovery(t *testing.T) {
 	after, _ := os.ReadFile(original)
 	if !bytes.Equal(b, after) {
 		t.Fatal("corruption discarded last generated snapshot")
+	}
+}
+
+func TestReceiverProbes(t *testing.T) {
+	c, _, _ := fixture(t)
+	s, err := Open(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	handler := (&API{Config: c, Store: s}).Handler()
+	check := func(path string, want int) string {
+		t.Helper()
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest("GET", path, nil))
+		if response.Code != want {
+			t.Errorf("%s = %d; want %d", path, response.Code, want)
+		}
+		return response.Body.String()
+	}
+	check("/healthz", 200)
+	check("/readyz", 200)
+	check("/freshz", 503)
+	for id := range c.Clients {
+		if _, err = s.Publish(id, manifest(t, `"site":`+httpMonitor), time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check("/freshz", 200)
+	if _, err = s.Publish("web", manifest(t, ""), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	check("/healthz", 200)
+	check("/readyz", 503)
+	metrics := check("/metrics", 200)
+	if !strings.Contains(metrics, "magickuma_pending_retirements 1\n") || strings.Contains(metrics, "web.example.org") || strings.Contains(metrics, "web.site") {
+		t.Fatal("metrics identity or count")
 	}
 }
