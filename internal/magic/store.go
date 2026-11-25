@@ -119,6 +119,63 @@ func Open(c Config) (*Store, error) {
 
 func (s *Store) Close() error               { return s.lock.Close() }
 func (s *Store) path(dir, id string) string { return filepath.Join(s.c.StateDir, dir, id+".json") }
+func readRecord(stateDir, id string) (record, error) {
+	b, e := os.ReadFile(filepath.Join(stateDir, "manifests", id+".json"))
+	if e != nil {
+		return record{}, e
+	}
+	var r record
+	if e = Decode(b, &r); e != nil {
+		return record{}, fmt.Errorf("invalid record %s: %w", id, e)
+	}
+	if r.Manifest.SchemaVersion != 1 || r.Manifest.Monitors == nil || r.Types == nil || r.Pending == nil || r.ChangedAt.IsZero() {
+		return record{}, fmt.Errorf("incomplete record %s", id)
+	}
+	return r, nil
+}
+
+func readPublication(stateDir, id string, changed time.Time) (time.Time, error) {
+	data, err := os.ReadFile(filepath.Join(stateDir, "metadata", id+".json"))
+	if os.IsNotExist(err) {
+		return changed, nil
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	var t time.Time
+	if err := json.Unmarshal(data, &t); err != nil {
+		return time.Time{}, err
+	}
+	if t.After(changed) {
+		return t, nil
+	}
+	return changed, nil
+}
+
+// Inspect reads one coherent persisted status without applying current policy.
+func Inspect(c Config, id string, now time.Time) (Status, error) {
+	if !idPattern.MatchString(id) {
+		return Status{}, errors.New("invalid client ID")
+	}
+	lock, err := os.Open(filepath.Join(c.StateDir, "writer.lock"))
+	if err != nil {
+		return Status{}, err
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_SH|syscall.LOCK_NB); err != nil {
+		return Status{}, errors.New("stop the receiver before offline inspection")
+	}
+	r, err := readRecord(c.StateDir, id)
+	if err != nil {
+		return Status{}, err
+	}
+	last, err := readPublication(c.StateDir, id, r.ChangedAt)
+	if err != nil {
+		return Status{}, err
+	}
+	return recordStatus(r, last, now, c.stale), nil
+}
+
 func (s *Store) restore() error {
 	entries, err := os.ReadDir(filepath.Join(s.c.StateDir, "manifests"))
 	if err != nil {
@@ -132,19 +189,18 @@ func (s *Store) restore() error {
 		if !idPattern.MatchString(id) || entry.Name() != id+".json" || !entry.Type().IsRegular() {
 			return errors.New("unexpected file in manifests")
 		}
-		b, e := os.ReadFile(s.path("manifests", id))
-		if e != nil {
-			return e
-		}
-		var r record
-		if e = Decode(b, &r); e != nil {
-			return fmt.Errorf("invalid record %s: %w", id, e)
-		}
-		if r.Manifest.SchemaVersion != 1 || r.Manifest.Monitors == nil || r.Types == nil || r.Pending == nil || r.ChangedAt.IsZero() {
-			return fmt.Errorf("incomplete record %s", id)
+		r, err := readRecord(s.c.StateDir, id)
+		if err != nil {
+			return err
 		}
 		p, configured := s.c.Clients[id]
 		changed := false
+		count := len(r.Pending)
+		for key := range r.Manifest.Monitors {
+			if _, pending := r.Pending[key]; !pending {
+				count++
+			}
+		}
 		for key, m := range r.Manifest.Monitors {
 			if !idPattern.MatchString(key) || m == nil || m["type"] != r.Types[key] {
 				return fmt.Errorf("inconsistent identity in %s", id)
@@ -153,7 +209,7 @@ func (s *Store) restore() error {
 			switch {
 			case !configured:
 				reason = "client missing from policy"
-			case len(r.Manifest.Monitors) > p.MaxMonitors:
+			case count > p.MaxMonitors:
 				reason = "quota reduced"
 			default:
 				if e := p.monitor(key, m); e != nil {
@@ -171,18 +227,9 @@ func (s *Store) restore() error {
 			}
 		}
 		s.records[id] = r
-		s.last[id] = r.ChangedAt
-		b, e = os.ReadFile(s.path("metadata", id))
-		if e == nil {
-			var t time.Time
-			if err := json.Unmarshal(b, &t); err != nil {
-				return err
-			}
-			if t.After(r.ChangedAt) {
-				s.last[id] = t
-			}
-		} else if !os.IsNotExist(e) {
-			return e
+		s.last[id], err = readPublication(s.c.StateDir, id, r.ChangedAt)
+		if err != nil {
+			return err
 		}
 	}
 	return s.render()
@@ -196,29 +243,34 @@ func (s *Store) save(id string, r record) error {
 	return atomicFile(s.path("manifests", id), b, 0600)
 }
 
-func (s *Store) Publish(id string, m Manifest, now time.Time) (bool, error) {
+type Receipt struct {
+	Changed    bool      `json:"changed"`
+	AcceptedAt time.Time `json:"acceptedAt"`
+}
+
+func (s *Store) Publish(id string, m Manifest, now time.Time) (Receipt, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.fenced {
-		return false, errUncertain
+		return Receipt{}, errUncertain
 	}
 	if now.Before(s.last[id]) {
 		now = s.last[id]
 	}
 	p, ok := s.c.Clients[id]
 	if !ok {
-		return false, errors.New("unconfigured client")
+		return Receipt{}, errors.New("unconfigured client")
 	}
 	if err := p.Validate(m); err != nil {
-		return false, err
+		return Receipt{}, err
 	}
 	old := s.records[id]
 	for key, item := range m.Monitors {
 		if old.Pending[key] != "" {
-			return false, invalid("monitors."+key, "awaiting administrative retirement")
+			return Receipt{}, invalid("monitors."+key, "awaiting administrative retirement")
 		}
 		if t := old.Types[key]; t != "" && item["type"] != t {
-			return false, invalid("monitors."+key+".type", "type is reserved; use a new ID")
+			return Receipt{}, invalid("monitors."+key+".type", "type is reserved; use a new ID")
 		}
 	}
 	next, _ := json.Marshal(m)
@@ -227,11 +279,11 @@ func (s *Store) Publish(id string, m Manifest, now time.Time) (bool, error) {
 		stamp, _ := json.Marshal(now)
 		if e := atomicFile(s.path("metadata", id), stamp, 0600); e != nil {
 			s.storageFailed = true
-			return false, e
+			return Receipt{}, e
 		}
 		s.last[id] = now
 		s.storageFailed = false
-		return false, nil
+		return Receipt{Changed: false, AcceptedAt: now}, nil
 	}
 	r := record{m, maps.Clone(old.Types), maps.Clone(old.Pending), now}
 	if r.Types == nil {
@@ -251,17 +303,17 @@ func (s *Store) Publish(id string, m Manifest, now time.Time) (bool, error) {
 		}
 	}
 	if len(m.Monitors) > 0 && len(m.Monitors)+len(r.Pending) > p.MaxMonitors {
-		return false, invalid("monitors", "quota includes checks pending retirement")
+		return Receipt{}, invalid("monitors", "quota includes checks pending retirement")
 	}
 	if len(r.Types) > 10000 {
-		return false, invalid("monitors", "namespace lifetime identity limit exceeded")
+		return Receipt{}, invalid("monitors", "namespace lifetime identity limit exceeded")
 	}
 	if e := s.save(id, r); e != nil {
 		s.storageFailed = true
 		if errors.Is(e, errUncertain) {
 			s.fenced = true
 		}
-		return false, e
+		return Receipt{}, e
 	}
 	s.records[id] = r
 	s.last[id] = now
@@ -270,7 +322,7 @@ func (s *Store) Publish(id string, m Manifest, now time.Time) (bool, error) {
 	if e := s.render(); e != nil {
 		slog.Error("generation pending", "error", e)
 	}
-	return true, nil
+	return Receipt{Changed: true, AcceptedAt: now}, nil
 }
 
 func (s *Store) render() (err error) {
@@ -319,9 +371,11 @@ func (s *Store) Retry() error {
 }
 
 func (s *Store) status(id string, now time.Time) Status {
-	r := s.records[id]
-	t := s.last[id]
-	return Status{t, t.IsZero() || now.Sub(t) > s.c.stale, len(r.Manifest.Monitors), maps.Clone(r.Pending)}
+	return recordStatus(s.records[id], s.last[id], now, s.c.stale)
+}
+
+func recordStatus(r record, t, now time.Time, stale time.Duration) Status {
+	return Status{t, t.IsZero() || now.Sub(t) > stale, len(r.Manifest.Monitors), maps.Clone(r.Pending)}
 }
 
 func (s *Store) Status(id string, now time.Time) Status {

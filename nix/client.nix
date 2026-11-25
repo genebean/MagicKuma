@@ -43,6 +43,7 @@ in {
             LoadCredential = "token:${cfg.tokenFile}";
             ExecStart = lib.escapeShellArgs [ (lib.getExe cfg.package) "publish" "-url" cfg.url "-manifest" "${manifest}" "-token-file" "%d/token" ];
             Restart = "on-failure";
+            RestartPreventExitStatus = [ 2 3 ];
             RestartSec = cfg.retryDelay;
           };
         };

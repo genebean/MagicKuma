@@ -17,8 +17,8 @@ contains independent modules. The tests directory holds the live Kuma
 fixture and the two-machine NixOS test. CI and release helpers live in ci.
 
 Read docs/architecture.md, docs/security.md and docs/operations.md before
-changing delegated capabilities. Start with issue #1 to find the relevant
-work item. The compatibility fixture uses AutoKuma 2.0.0 and Uptime Kuma
+changing delegated capabilities. Find the relevant work item under the
+[tracking epic](https://github.com/genebean/MagicKuma/issues/1). The compatibility fixture uses AutoKuma 2.0.0 and Uptime Kuma
 2.5.12. Verify any changed behavior against tagged source and a real test.
 
 Use a short imperative commit subject of at most 50 characters. Leave one

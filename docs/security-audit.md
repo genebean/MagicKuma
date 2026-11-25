@@ -36,6 +36,10 @@ Reviewed 2026-11-25. Scope includes the Go receiver, publisher, local administra
 
 The audited action releases are checkout 7.0.1, setup-go 7.1.0, setup-node 7.1.0, upload-artifact 7.0.2 and install-nix-action 32.1.0. Each workflow references full commit SHAs. The compatibility pair is AutoKuma 2.0.0 and Uptime Kuma 2.5.12. Review new upstream versions together with the fixture before updating a compatibility claim.
 
+## Follow-up review
+
+Two independent AI reviewers examined implementation complexity and first-time operator documentation. The follow-up changes give offline inspection a shared, read-only lock and restrict it to the requested client's record and timestamp. Startup counts distinct pending and declared checks when enforcing a tightened quota. Regression tests cover both cases and the committed timestamp returned to concurrent publishers. Strict parsing still validates duplicate keys and nesting before decoding monitor values.
+
 ## Remaining operating assumptions
 
 - A domain grant delegates requests to that name and its permitted ports, including any path. DNS may change between publication and execution. Enforce network isolation at the executor and grant only origins safe for the permitted request types.

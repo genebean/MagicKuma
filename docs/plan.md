@@ -1,6 +1,6 @@
 # Implementation and review plan
 
-Epic: Distributed declarative monitoring with a secure standalone receiver.
+[Tracking epic and sub-issues](https://github.com/genebean/MagicKuma/issues/1)
 
 | Work item | Depends on | Acceptance criteria |
 | --- | --- | --- |

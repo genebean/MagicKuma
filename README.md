@@ -6,7 +6,11 @@ A host can publish the checks for its own services, even when another team runs 
 
 MagicKuma accepts HTTPS snapshots. AutoKuma synchronizes the definitions into Uptime Kuma. Uptime Kuma runs the checks and holds their history. Only the reconciler needs Kuma credentials.
 
+**AI authorship.** OpenAI Codex (GPT-6) produced the initial implementation, tests, and documentation from requirements and design decisions supplied by the maintainer. Agent-authored commits identify the model in a co-author trailer.
+
 ## Try it
+
+From a checkout with Go installed, run the following commands. The first two build the CLI and validate a sample monitor locally. The third creates the publisher token and its receiver-side hash in the current directory.
 
 ```sh
 go build -o magickuma ./cmd/magickuma
