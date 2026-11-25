@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -51,5 +52,27 @@ func TestTokenGenerationPreservesExistingFile(t *testing.T) {
 	b, err := os.ReadFile(hash)
 	if err != nil || string(b) != "existing" {
 		t.Fatal("changed an existing hash")
+	}
+}
+
+func TestPublisherRetryClassification(t *testing.T) {
+	token := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(token, []byte("test"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var code atomic.Int32
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(int(code.Load()))
+	}))
+	defer server.Close()
+	original := http.DefaultTransport
+	http.DefaultTransport = server.Client().Transport
+	t.Cleanup(func() { http.DefaultTransport = original })
+	for status, rejected := range map[int]bool{401: true, 413: true, 422: true, 429: false, 503: false} {
+		code.Store(int32(status))
+		err := request(context.Background(), "publish", server.URL, token, nil)
+		if err == nil || errors.Is(err, errRejected) != rejected {
+			t.Errorf("HTTP %d: unexpected error classification: %v", status, err)
+		}
 	}
 }

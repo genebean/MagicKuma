@@ -127,9 +127,9 @@ func TestLifecycle(t *testing.T) {
 	now := time.Now().UTC()
 	put := func(id, items string, changed bool) {
 		t.Helper()
-		b, e := s.Publish(id, manifest(t, items), now)
-		if e != nil || b != changed {
-			t.Fatalf("publish %s: %t %v", id, b, e)
+		receipt, e := s.Publish(id, manifest(t, items), now)
+		if e != nil || receipt.Changed != changed {
+			t.Fatalf("publish %s: %t %v", id, receipt.Changed, e)
 		}
 	}
 	input := `"site":` + httpMonitor
@@ -389,5 +389,58 @@ func TestSymlinkedExportCannotReplaceManifest(t *testing.T) {
 	if store, err := Open(c); err == nil {
 		store.Close()
 		t.Fatal("accepted an alias of authoritative storage")
+	}
+}
+
+func TestOfflineInspectionAndReducedQuota(t *testing.T) {
+	c, _, _ := fixture(t)
+	s, err := Open(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	now := time.Now().UTC()
+	site := `"site":` + httpMonitor
+	put := func(client, items string, at time.Time) Receipt {
+		t.Helper()
+		r, err := s.Publish(client, manifest(t, items), at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	put("other", site, now)
+	put("web", site+`,"old":`+httpMonitor, now)
+	put("web", site, now)
+	if r := put("web", site, now.Add(-time.Minute)); r.Changed || !r.AcceptedAt.Equal(now) {
+		t.Fatal("receipt disagrees with the last committed publication")
+	}
+	if _, err := Inspect(c, "web", now); err == nil {
+		t.Fatal("inspection raced the writer")
+	}
+	s.Close()
+	incomplete := c
+	incomplete.Clients = nil
+	status, err := Inspect(incomplete, "web", now)
+	if err != nil || len(status.Pending) != 1 || status.Declared != 1 {
+		t.Fatalf("read-only inspection returned %+v, %v", status, err)
+	}
+	other, err := Inspect(incomplete, "other", now)
+	if err != nil || len(other.Pending) != 0 {
+		t.Fatal("inspection altered another client's state", err)
+	}
+	if _, err := Inspect(c, "../outside", now); err == nil {
+		t.Fatal("accepted an invalid client ID")
+	}
+	policy := c.Clients["web"]
+	policy.MaxMonitors = 1
+	c.Clients["web"] = policy
+	reopened, err := Open(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if got := reopened.Status("web", now).Pending; len(got) != 2 || got["site"] != "quota reduced" {
+		t.Fatalf("reduced quota overlooked a retained check: %v", got)
 	}
 }

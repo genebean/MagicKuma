@@ -127,7 +127,7 @@ func (a *API) publish(w http.ResponseWriter, r *http.Request, slots chan struct{
 		return
 	}
 	now := time.Now().UTC()
-	changed, err := a.Store.Publish(id, manifest, now)
+	receipt, err := a.Store.Publish(id, manifest, now)
 	if err != nil {
 		if !a.rejectProblem(w, err) {
 			slog.Error("storage failed", "error", err)
@@ -136,8 +136,8 @@ func (a *API) publish(w http.ResponseWriter, r *http.Request, slots chan struct{
 		return
 	}
 	a.accepted.Add(1)
-	slog.Info("publication accepted", "client", id, "changed", changed, "monitors", len(manifest.Monitors))
-	reply(w, http.StatusOK, map[string]any{"acceptedAt": now, "changed": changed})
+	slog.Info("publication accepted", "client", id, "changed", receipt.Changed, "monitors", len(manifest.Monitors))
+	reply(w, http.StatusOK, receipt)
 }
 
 func (a *API) rejectProblem(w http.ResponseWriter, err error) bool {

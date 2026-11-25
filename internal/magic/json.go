@@ -96,7 +96,12 @@ func Parse(data []byte) (Manifest, error) {
 	if len(root) != 2 || root["schemaVersion"] == nil || root["monitors"] == nil {
 		return m, invalid("$", "expected schemaVersion and monitors")
 	}
-	if err := Decode(data, &m); err != nil {
+	if err := json.Unmarshal(root["schemaVersion"], &m.SchemaVersion); err != nil {
+		return m, err
+	}
+	d := json.NewDecoder(bytes.NewReader(root["monitors"]))
+	d.UseNumber()
+	if err := d.Decode(&m.Monitors); err != nil {
 		return m, err
 	}
 	if m.SchemaVersion != 1 || m.Monitors == nil {

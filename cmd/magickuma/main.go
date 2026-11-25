@@ -33,8 +33,11 @@ const usage = `magickuma - Distributed, declarative monitoring for Uptime Kuma
   run-autokuma   -snapshot FILE -program AUTOKUMA -work-dir DIR
   version
 
-Exit 0 indicates success, 1 an operational or validation error, 2 a usage error.
+Exit 0 indicates success, 1 an operational failure, 2 a usage error,
+and 3 a rejected publication or invalid manifest.
 `
+
+var errRejected = errors.New("publication rejected")
 
 type usageError string
 
@@ -51,6 +54,9 @@ func main() {
 		var u usageError
 		if errors.As(err, &u) {
 			os.Exit(2)
+		}
+		if errors.Is(err, errRejected) {
+			os.Exit(3)
 		}
 		os.Exit(1)
 	}
@@ -140,7 +146,7 @@ func run(ctx context.Context, args []string) error {
 				return err
 			}
 			if err = magic.ValidateOffline(data); err != nil {
-				return err
+				return errors.Join(errRejected, err)
 			}
 		}
 		if cmd == "validate" {
@@ -152,14 +158,18 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	if cmd == "inspect" {
+		status, err := magic.Inspect(c, client, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(status)
+	}
 	s, err := magic.Open(c)
 	if err != nil {
 		return err
 	}
 	defer s.Close()
-	if cmd == "inspect" {
-		return json.NewEncoder(os.Stdout).Encode(s.Status(client, time.Now().UTC()))
-	}
 	if cmd != "serve" {
 		return s.Admin(cmd, client, monitor)
 	}
@@ -213,7 +223,12 @@ func request(ctx context.Context, cmd, origin, tokenFile string, data []byte) er
 	if resp.StatusCode != 200 {
 		var problem struct{ Error, Message, Path string }
 		_ = json.NewDecoder(io.LimitReader(resp.Body, 8192)).Decode(&problem)
-		return fmt.Errorf("HTTP %d %s %s %s", resp.StatusCode, problem.Error, problem.Path, problem.Message)
+		err := fmt.Errorf("HTTP %d %s %s %s", resp.StatusCode, problem.Error, problem.Path, problem.Message)
+		switch resp.StatusCode {
+		case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType, http.StatusUnprocessableEntity:
+			return errors.Join(errRejected, err)
+		}
+		return err
 	}
 	_, e = io.Copy(os.Stdout, io.LimitReader(resp.Body, 1<<20))
 	return e
