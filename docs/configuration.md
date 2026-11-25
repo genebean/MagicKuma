@@ -15,4 +15,16 @@ Exact names match only themselves. A wildcard grants exactly one label beneath t
 }
 ```
 
-See the client, server and reconciliation examples as their implementation lands. A publication trigger must enqueue an independent job without making a monitored service depend on the remote receiver. A timer provides eventual delivery after temporary failures.
+A publication trigger must enqueue an independent job without making a monitored service depend on the remote receiver. A timer provides eventual delivery after temporary failures.
+
+## NixOS installation
+
+Use the linked client and server modules on the corresponding machines. Each host can evaluate its own flake. The client timer and service restart hooks enqueue the same oneshot. A separate active activation unit detects changes to the Nix-generated manifest. A failed network call retries independently. Token and hash files are supplied to systemd as runtime credentials. Restart the receiver after rotating hash files.
+
+[Complete consumer example](../examples/nixos.nix)
+
+For a dedicated MagicKuma reconciler enable services.magickuma.server.reconciler and supply its environmentFile. The receiver and reader run as distinct users. The data and runtime directories are created by systemd. With a custom generatedFile, create the dedicated parent directory with receiver write and reader traverse permissions. To run an unrelated AutoKuma instance import nixosModules.autokuma separately and use services.autokuma.environment and services.autokuma.environmentFile.
+
+For offline administration with the NixOS service stopped, use a copy of the non-secret native configuration whose tokenHashFiles refer to the original readable runtime hash paths. The systemd credential directory used by the generated service configuration exists only while the unit is running. Run administrative commands as the receiver user with access to those hashes or use a transient unit with the corresponding LoadCredential entries. Preserve state/export ownership.
+
+The package, app and development shell support x86_64-linux, aarch64-linux and aarch64-darwin. Linux checks include the two-machine VM scenario. Consumers can pin a reviewed revision and follow their own nixpkgs input.
