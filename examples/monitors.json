@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "monitors": {
+    "health": {
+      "type": "json-query",
+      "name": "Web API health",
+      "url": "https://web.example.org/health",
+      "json_path": "$.status",
+      "json_path_operator": "==",
+      "expected_value": "healthy",
+      "interval": 60
+    }
+  }
+}
