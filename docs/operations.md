@@ -56,3 +56,14 @@ location ~ ^/(healthz|readyz|freshz)$ {
     proxy_pass http://127.0.0.1:8085;
 }
 ```
+
+## Binaries and containers
+
+Reviewed v-prefixed release tags trigger the full CI workflow. After verification, the release job builds Linux amd64/arm64 and Darwin arm64 archives, publishes SHA256SUMS, and pushes a non-root two-platform Linux image to GHCR. Until a release is tagged, build locally from the reviewed checkout. Verify an archive with its SHA256SUMS before installing the executable.
+
+```sh
+docker build -t magickuma:local .
+docker run --rm -v "$PWD/examples:/examples:ro" magickuma:local validate -manifest /examples/monitors.json
+```
+
+The image runs as UID/GID 65532. Mount the config and token/hash files read-only, and provide writable state and export mounts for serve. Use a TLS proxy sharing the receiver's network namespace to reach its loopback listener. Another option on Linux is host networking with the proxy on the same host. The image contains the Go executable and system trust bundle. Run the upstream AutoKuma executable separately under the coordinated reader.
